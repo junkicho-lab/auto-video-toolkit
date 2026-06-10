@@ -1,0 +1,36 @@
+models:
+  # 실제 존재하는 모델명으로 설정. (gemini-3.x는 아직 미출시 → 404)
+  # 사용 가능 모델 확인:  autovideo models
+  research: "gemini-2.5-flash"
+  script: "gemini-2.5-flash"        # 더 강한 사고가 필요하면 gemini-2.5-pro
+  scene_direction: "gemini-2.5-flash"  # gemini-2.5-pro 권장(가능 시)
+  image_prompt: "gemini-2.5-flash"
+  image_generation: "gpt-image-2"   # ima2 (GPT Image 2 / GPT-5 image) — 로컬 ima2 서버
+  video_generation: "veo"           # veo | grok | kling | higgsfield
+  metadata: "gemini-2.5-flash"
+
+# 이미지 생성(ima2 / GPT Image 2) 기본값
+image:
+  engine: "ima2"
+  model: "gpt-5.5"                   # gpt-5.5 | gpt-5.4 | gpt-5.4-mini
+  quality: "high"                    # low | medium | high
+  size: "1024x1536"
+
+# 영상 provider별 기본 설정 (scripts/generate_videos.py 가 참조)
+video_providers:
+  veo:
+    model: "veo-3.1-generate-preview"   # veo-3.1-fast-generate-preview / veo-3.1-lite-generate-preview
+    resolution: "720p"                  # 720p | 1080p | 4k
+  grok:
+    model: "grok-imagine-video"
+  kling:
+    model: "kling-v1"                   # kling-v1 | kling-v1.5 | kling-v2
+    base_url: "https://api.klingai.com"
+  higgsfield:
+    model: "dop-preview"                # Segmind: dop-lite | dop-preview | dop-turbo
+
+api:
+  gemini_base_url: "https://generativelanguage.googleapis.com"
+  elevenlabs_base_url: "https://api.elevenlabs.io"
+  xai_base_url: "https://api.x.ai/v1"
+  segmind_base_url: "https://api.segmind.com/v1"

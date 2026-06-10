@@ -1,0 +1,8 @@
+main_category: ""          # 대주제
+sub_topics: []             # 세부 주제 목록
+content_pillars:           # 콘텐츠 기둥 (3-5개)
+  - name: ""
+    description: ""
+    frequency: ""          # weekly/biweekly/monthly
+evergreen_topics: []       # 시즌/시기 무관 상시 주제
+trending_keywords: []      # 추적할 트렌드 키워드

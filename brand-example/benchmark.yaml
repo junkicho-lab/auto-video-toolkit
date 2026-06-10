@@ -1,0 +1,22 @@
+channels:
+  - name: ""
+    url: ""
+    subscribers: ""
+    avg_views: ""
+    content_style: ""
+    success_patterns: []   # 이 채널의 성공 공식
+
+checklist:
+  thumbnail:
+    - "얼굴/감정 클로즈업"
+    - "고대비 색상"
+    - "3단어 이하 텍스트"
+  title:
+    - "호기심 유발 키워드"
+    - "숫자 활용"
+  first_3_seconds:
+    - "갈등/질문 제시"
+    - "시각적 충격"
+  retention:
+    - "30초마다 전환"
+    - "예고/떡밥"

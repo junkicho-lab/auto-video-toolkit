@@ -1,0 +1,161 @@
+import { describe, it } from "node:test";
+import assert from "node:assert";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const REQUIRED_SOURCE_PACK_FILES = [
+  "LICENSE",
+  "README.md",
+  "docs/RECOVER_OLD_IMAGES.md",
+  "server.ts",
+  "config.ts",
+  "routes/cardNews.ts",
+  "routes/metadata.ts",
+  "routes/storage.ts",
+  "integrations/comfyui/ima2_gen_bridge/__init__.py",
+  "integrations/comfyui/ima2_gen_bridge/nodes.py",
+  "integrations/comfyui/ima2_gen_bridge/README.md",
+  "lib/cardNewsTemplateStore.ts",
+  "lib/imageMetadata.ts",
+  "lib/imageMetadataStore.ts",
+  "lib/openDirectory.ts",
+  "lib/storageMigration.ts",
+  "bin/ima2.ts",
+  "bin/lib/storage-doctor.ts",
+  "skills/ima2/SKILL.md",
+  "assets/card-news/templates/academy-lesson-square/template.json",
+  "assets/card-news/templates/academy-lesson-square/base.png",
+  "assets/card-news/templates/academy-lesson-square/preview.png",
+  "assets/card-news/templates/clean-report-square/template.json",
+  "assets/card-news/templates/clean-report-square/base.png",
+  "assets/card-news/templates/clean-report-square/preview.png",
+];
+
+const REQUIRED_BUILD_PACK_FILES = [
+  "ui/dist/index.html",
+];
+
+const REQUIRED_RUNTIME_PACK_FILES = [
+  "server.js",
+  "config.js",
+  "bin/ima2.js",
+  "routes/cardNews.js",
+  "routes/storage.js",
+  "lib/cardNewsTemplateStore.js",
+];
+
+function npmCommand() {
+  return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
+function npmPackCommandArgs(packDestination) {
+  const args = ["pack", "--dry-run", "--json", "--pack-destination", packDestination];
+  if (process.env.npm_execpath) {
+    return { command: process.execPath, args: [process.env.npm_execpath, ...args] };
+  }
+  return { command: npmCommand(), args };
+}
+
+function readPackManifest() {
+  const packDestination = mkdtempSync(join(tmpdir(), "ima2-pack-smoke-"));
+  try {
+    const { command, args } = npmPackCommandArgs(packDestination);
+    const result = spawnSync(command, args, {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        npm_config_loglevel: "silent",
+      },
+    });
+
+    assert.strictEqual(
+      result.status,
+      0,
+      `npm pack --dry-run failed\nerror:\n${result.error?.message || ""}\nstdout:\n${result.stdout || ""}\nstderr:\n${result.stderr || ""}`,
+    );
+
+    try {
+      const jsonMatch = result.stdout.match(/\[\s*\{[\s\S]*\}\s*\]\s*$/);
+      assert.ok(jsonMatch, `npm pack output should end with a JSON manifest array\nstdout:\n${result.stdout}`);
+      const parsed = JSON.parse(jsonMatch[0]);
+      assert.ok(Array.isArray(parsed), "npm pack output should be a JSON array");
+      assert.ok(parsed[0], "npm pack output should include one package manifest");
+      return parsed[0];
+    } catch (error) {
+      assert.fail(`Could not parse npm pack --dry-run --json output: ${error.message}`);
+    }
+  } finally {
+    rmSync(packDestination, { recursive: true, force: true });
+  }
+}
+
+describe("package smoke", () => {
+  it("keeps publish dry-run from re-entering prepublishOnly smoke tests", () => {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
+    const script = readFileSync(join(process.cwd(), "scripts/publish-dry-run.mjs"), "utf8");
+
+    assert.equal(pkg.scripts["publish:dry-run"], "node scripts/publish-dry-run.mjs");
+    assert.match(script, /"publish", "--dry-run", "--ignore-scripts"/);
+    assert.match(script, /previously published versions/);
+  });
+
+  it("includes release-critical source files in npm pack output", () => {
+    const manifest = readPackManifest();
+    const packedFiles = new Set(manifest.files.map((file) => file.path));
+
+    for (const requiredFile of REQUIRED_SOURCE_PACK_FILES) {
+      assert.ok(
+        packedFiles.has(requiredFile),
+        `npm package should include ${requiredFile}`,
+      );
+    }
+  });
+
+  it("includes built UI files when build output exists", () => {
+    const manifest = readPackManifest();
+    const packedFiles = new Set(manifest.files.map((file) => file.path));
+
+    for (const requiredFile of REQUIRED_BUILD_PACK_FILES) {
+      assert.ok(
+        packedFiles.has(requiredFile),
+        `npm package should include ${requiredFile}`,
+      );
+    }
+  });
+
+  it("includes emitted runtime JavaScript files for package execution", () => {
+    const manifest = readPackManifest();
+    const packedFiles = new Set(manifest.files.map((file) => file.path));
+
+    for (const requiredFile of REQUIRED_RUNTIME_PACK_FILES) {
+      assert.ok(
+        packedFiles.has(requiredFile),
+        `npm package should include emitted runtime file ${requiredFile}`,
+      );
+    }
+  });
+
+  it("excludes UI sourcemaps from normal release packages", () => {
+    const manifest = readPackManifest();
+    const mapFiles = manifest.files
+      .map((file) => file.path)
+      .filter((path) => path.startsWith("ui/dist/") && path.endsWith(".map"));
+
+    assert.deepEqual(mapFiles, [], "normal npm package should not include ui/dist sourcemaps");
+  });
+
+  it("excludes docs screenshots, test assets, and Python caches from release packages", () => {
+    const manifest = readPackManifest();
+    const packedFiles = manifest.files.map((file) => file.path);
+    const packedFileSet = new Set(packedFiles);
+
+    assert.ok(!packedFileSet.has("assets/screenshot.png"));
+    assert.ok(!packedFileSet.has("assets/phase-a-bg-cleanup-test.png"));
+    assert.ok(!packedFiles.some((path) => path.startsWith("assets/screenshots/")));
+    assert.ok(!packedFiles.some((path) => path.includes("__pycache__")));
+    assert.ok(!packedFiles.some((path) => path.endsWith(".pyc")));
+  });
+});

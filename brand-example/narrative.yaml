@@ -1,0 +1,25 @@
+worldview:
+  setting: ""              # 배경 세계관
+  tone: ""                 # 전체 톤 (유머/진지/교육 등)
+  core_message: ""         # 채널이 전달하는 핵심 메시지
+
+story_patterns:
+  opening_hook: ""         # 오프닝 공식 (첫 3초)
+  structure: ""            # 서사 구조 (기승전결/문제-해결 등)
+  closing: ""              # 엔딩 공식 (CTA 포함)
+  recurring_elements: []   # 매 에피소드 반복 요소
+
+episode_formula:
+  short_form:              # 숏폼 (9:16, 59초 이내)
+    duration_sec: 59
+    duration_hard_limit: true   # 59초 초과 금지
+    scene_count_min: 3
+    scene_count_max: 5
+    pacing: "fast"
+  long_form:               # 롱폼 (16:9, 3~5분)
+    duration_min: 3
+    duration_max: 5
+    duration_hard_limit: true   # 5분 초과 금지
+    scene_count_min: 10
+    scene_count_max: 20
+    pacing: "varied"

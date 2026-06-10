@@ -1,0 +1,15 @@
+persona:
+  name: ""
+  personality: []          # 성격 키워드 3-5개
+  speaking_style: ""       # 말투 특성
+  catchphrase: []          # 시그니처 표현
+
+visual:
+  art_style: ""            # 2D/3D/실사/커스텀
+  color_palette: []        # 주요 색상
+  key_elements: []         # 항상 등장하는 시각 요소
+  base_prompt: "" # 이미지 생성 기본 프롬프트
+
+consistency_rules:
+  always: []               # 항상 지켜야 할 것
+  never: []                # 절대 하면 안 되는 것

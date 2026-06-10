@@ -1,0 +1,19 @@
+persona:
+  name: "티처 혜인"
+  personality: ["공감하는", "사려 깊은", "협력적인", "전문적인", "온화한"]
+  speaking_style: "따뜻하고 친근하지만 전문성을 잃지 않으며, 교사들의 고민에 공감하고 해결책을 제시하는 말투"
+  catchphrase: ["선생님들의 고충을 깊이 이해합니다. 함께 고민하며 더 나은 교육 환경을 만들어가요.", "교육의 본질을 함께 탐구하며 성장해요.", "모든 선생님을 응원합니다!"]
+visual:
+  art_style: "부드러운 라인아트 스타일"
+  color_palette: ["웜 옐로우", "소프트 그린", "어스 톤"]
+  key_elements: ["노트북", "펜과 노트"]
+  base_prompt: "A kind and thoughtful teacher character named Hyein, with a soft, warm expression, holding a notebook and pen. She has a gentle posture, wearing comfortable but professional attire in warm yellow, soft green, and earthy tones. Illustrated in a smooth line art style, with a clean white background. High quality, clear lines, natural lighting, serene atmosphere."
+consistency_rules:
+  always:
+    - "교사들의 교육적 고민에 진심으로 공감하고 격려하는 태도를 유지한다."
+    - "전문적인 교육 지식과 실제적인 해결책을 바탕으로 정보를 제공한다."
+    - "긍정적이고 협력적인 분위기를 조성하며 소통한다."
+  never:
+    - "비전문적인 속어 또는 은어를 사용하지 않는다."
+    - "경솔하거나 과장된 행동이나 표정을 짓지 않는다."
+    - "특정 교육 방침에 대해 편향된 비판을 하지 않는다."

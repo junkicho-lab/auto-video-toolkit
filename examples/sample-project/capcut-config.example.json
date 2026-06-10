@@ -1,0 +1,62 @@
+{
+  "name": "EP02-MikeTyson",
+  "fps": 30,
+  "canvas": {
+    "width": 1280,
+    "height": 720
+  },
+  "video": [
+    "./scenes/hook-1/hook-1.mp4",
+    "./scenes/hook-2/hook-2.mp4",
+    "./scenes/act1-1/act1-1.mp4",
+    "./scenes/act1-3/act1-3.mp4",
+    "./scenes/act1-4/act1-4.mp4",
+    "./scenes/act1-2/act1-2.mp4",
+    "./scenes/act1-5/act1-5.mp4",
+    "./scenes/act1-6/act1-6.mp4",
+    "./scenes/act2-1/act2-1.mp4",
+    "./scenes/act2-3/act2-3.mp4",
+    "./scenes/act2-4/act2-4.mp4",
+    "./scenes/act2-2/act2-2.mp4",
+    "./scenes/act2-5/act2-5.mp4",
+    "./scenes/act3-1/act3-1.mp4",
+    "./scenes/act3-3/act3-3.mp4",
+    "./scenes/act3-2/act3-2.mp4",
+    "./scenes/act3-4/act3-4.mp4",
+    "./scenes/act3-5/act3-5.mp4",
+    "./scenes/act4-1/act4-1.mp4",
+    "./scenes/act4-3/act4-3.mp4",
+    "./scenes/act4-2/act4-2.mp4",
+    "./scenes/act4-4/act4-4.mp4",
+    "./scenes/act5-1/act5-1.mp4",
+    "./scenes/act5-3/act5-3.mp4",
+    "./scenes/act5-2/act5-2.mp4"
+  ],
+  "audio": [
+    {
+      "path": "./capcut-export/narration/hook.wav",
+      "start": 0
+    },
+    {
+      "path": "./capcut-export/narration/act1.wav",
+      "start": 16.6
+    },
+    {
+      "path": "./capcut-export/narration/act2.wav",
+      "start": 79.1
+    },
+    {
+      "path": "./capcut-export/narration/act3.wav",
+      "start": 128.8
+    },
+    {
+      "path": "./capcut-export/narration/act4.wav",
+      "start": 179.6
+    },
+    {
+      "path": "./capcut-export/narration/act5.wav",
+      "start": 221.5
+    }
+  ],
+  "subtitle": "./capcut-export/subtitles.srt"
+}

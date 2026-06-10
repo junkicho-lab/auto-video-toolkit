@@ -1,0 +1,31 @@
+# 시크릿 — 절대 커밋 금지
+config/api-keys.env
+*.env
+!*.env.example
+
+# 파이썬
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# 생성 산출물 (대용량 미디어)
+projects/*/scenes/
+projects/*/output/
+projects/*/narration/
+projects/*/anchors/
+*.mp4
+*.wav
+*.mp3
+*.png
+*.jpeg
+
+# 로컬 전용 (머신 경로 포함 — 비밀 아님, 커밋 불필요)
+.mcp.json
+
+# Node (만약을 위해)
+node_modules/
+
+# OS
+.DS_Store

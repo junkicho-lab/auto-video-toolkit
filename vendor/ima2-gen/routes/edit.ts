@@ -1,0 +1,281 @@
+import { mkdir, writeFile } from "fs/promises";
+import { join } from "path";
+import { randomBytes } from "crypto";
+import type { Express, Request, Response } from "express";
+import { classifyUpstreamError } from "../lib/errorClassify.js";
+import { normalizeOAuthParams } from "../lib/oauthNormalize.js";
+import { resolveProviderOptions } from "../lib/providerOptions.js";
+import { editViaResponses } from "../lib/responsesImageAdapter.js";
+import { startJob, finishJob, registerJobAbortController, isJobCanceled } from "../lib/inflight.js";
+import {
+  isGenerationCanceledError,
+  makeGenerationCanceledError,
+  throwIfJobCanceled,
+} from "../lib/generationCancel.js";
+import { logEvent, logError } from "../lib/logger.js";
+import { hasPngAlphaChannel, parsePngInfo } from "../lib/pngInfo.js";
+import { invalidateHistoryIndex } from "../lib/historyIndex.js";
+
+import { errInfo } from "../lib/errInfo.js";
+import { requireRuntimeContext, type RouteRuntimeContext, type RuntimeContext } from "../lib/runtimeContext.js";
+function validateModeration(ctx: RuntimeContext, moderation: unknown) {
+  if (typeof moderation !== "string" || !ctx.config.oauth.validModeration.has(moderation)) {
+    return { error: "moderation must be one of: auto, low" };
+  }
+  return { moderation };
+}
+
+const MAX_EDIT_MASK_BYTES = 16 * 1024 * 1024;
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+
+function stripPngDataUrl(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/^data:image\/png;base64,/, "");
+}
+
+interface PngDecodeResult {
+  b64?: string;
+  buffer?: Buffer;
+  info?: ReturnType<typeof parsePngInfo>;
+  error?: string;
+  code?: string;
+}
+
+function decodePngDataUrl(value: unknown, invalidCode: string, pngCode: string): PngDecodeResult {
+  const b64 = stripPngDataUrl(value).replace(/\s+/g, "");
+  if (!b64 || b64.length % 4 !== 0 || !BASE64_RE.test(b64)) {
+    return { error: "image must be valid base64", code: invalidCode };
+  }
+  const buffer = Buffer.from(b64, "base64");
+  if (buffer.length === 0 || buffer.toString("base64").replace(/=+$/, "") !== b64.replace(/=+$/, "")) {
+    return { error: "image must be valid base64", code: invalidCode };
+  }
+  const info = parsePngInfo(buffer);
+  if (info.error) return { error: "image must be a PNG image", code: pngCode };
+  return { b64, buffer, info };
+}
+
+interface MaskValidationResult {
+  mask?: string | null;
+  maskBytes?: number;
+  error?: string;
+  code?: string;
+}
+
+function validateEditMask(imageB64: unknown, mask: unknown): MaskValidationResult {
+  if (mask == null) return { mask: null, maskBytes: 0 };
+  if (typeof mask !== "string" || mask.length === 0) {
+    return { error: "mask must be a PNG data URL or base64 string", code: "INVALID_EDIT_MASK" };
+  }
+  const maskCheck = decodePngDataUrl(mask, "INVALID_EDIT_MASK_BASE64", "INVALID_EDIT_MASK_PNG");
+  if (maskCheck.error || !maskCheck.buffer || !maskCheck.info) return maskCheck;
+  if (maskCheck.buffer.length > MAX_EDIT_MASK_BYTES) {
+    return { error: "mask is too large", code: "EDIT_MASK_TOO_LARGE" };
+  }
+  if (!hasPngAlphaChannel(maskCheck.info)) {
+    return { error: "mask PNG must include an alpha channel", code: "EDIT_MASK_NO_ALPHA" };
+  }
+  const imageCheck = decodePngDataUrl(imageB64, "INVALID_EDIT_IMAGE_BASE64", "INVALID_EDIT_IMAGE_PNG");
+  if (imageCheck.error || !imageCheck.info) return imageCheck;
+  if (imageCheck.info.width !== maskCheck.info.width || imageCheck.info.height !== maskCheck.info.height) {
+    return { error: "mask dimensions must match image dimensions", code: "EDIT_MASK_DIMENSION_MISMATCH" };
+  }
+  return { mask: maskCheck.b64, maskBytes: maskCheck.buffer.length };
+}
+
+export function registerEditRoutes(app: Express, ctxRaw: RouteRuntimeContext) {
+  const ctx = requireRuntimeContext(ctxRaw);
+  app.post("/api/edit", async (req: Request, res: Response) => {
+    const requestId = typeof req.body?.requestId === "string" ? req.body.requestId : req.id;
+    let finishStatus = "completed";
+    let finishHttpStatus;
+    let finishErrorCode;
+    let finishMeta = {};
+    let finishCanceled = false;
+    const cancelController = new AbortController();
+    try {
+      const {
+        prompt,
+        image: imageB64,
+        mask: rawMask,
+        quality: rawQuality = "medium",
+        size = "1024x1024",
+        moderation = "low",
+        provider = "oauth",
+        mode: promptMode = "auto",
+        model: rawModel,
+        reasoningEffort: rawReasoningEffort,
+        webSearchEnabled: rawWebSearchEnabled = true,
+      } = req.body;
+      const { quality, warnings: qualityWarnings } = normalizeOAuthParams({ provider, quality: rawQuality });
+      const providerOptions = resolveProviderOptions(ctx, {
+        provider,
+        rawModel,
+        rawReasoningEffort,
+        rawSize: size,
+        rawWebSearchEnabled,
+      });
+      if (providerOptions.error) {
+        finishStatus = "error";
+        finishHttpStatus = providerOptions.status;
+        finishErrorCode = providerOptions.code;
+        return res.status(providerOptions.status).json({ error: providerOptions.error, code: providerOptions.code });
+      }
+      const imageModel = providerOptions.model;
+      const reasoningEffort = providerOptions.reasoningEffort;
+      const effectiveSize = providerOptions.size;
+      const webSearchEnabled = providerOptions.webSearchEnabled;
+      const activeProvider = providerOptions.provider;
+      const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : null;
+      const normalizedPromptMode = promptMode === "direct" ? "direct" : "auto";
+
+      startJob({
+        requestId,
+        kind: "classic",
+        prompt,
+        meta: {
+          kind: "edit",
+          sessionId,
+          quality,
+          model: imageModel,
+          size: effectiveSize,
+        },
+      });
+      registerJobAbortController(requestId, cancelController);
+
+      if (!prompt || !imageB64) {
+        finishStatus = "error";
+        finishHttpStatus = 400;
+        finishErrorCode = "INVALID_EDIT_INPUT";
+        return res.status(400).json({ error: "Prompt and image are required" });
+      }
+      const maskCheck: any = validateEditMask(imageB64, rawMask);
+      if (maskCheck.error) {
+        finishStatus = "error";
+        finishHttpStatus = 400;
+        finishErrorCode = maskCheck.code;
+        return res.status(400).json({ error: maskCheck.error, code: maskCheck.code });
+      }
+      const moderationCheck = validateModeration(ctx, moderation);
+      if (moderationCheck.error) {
+        finishStatus = "error";
+        finishHttpStatus = 400;
+        finishErrorCode = "INVALID_MODERATION";
+        return res.status(400).json({ error: moderationCheck.error });
+      }
+
+      logEvent("edit", "request", {
+        requestId,
+        client: req.get("x-ima2-client") || "ui",
+        provider: activeProvider,
+        quality,
+        model: imageModel,
+        size: effectiveSize,
+        moderation,
+        sessionId,
+        promptChars: typeof prompt === "string" ? prompt.length : 0,
+        promptMode: normalizedPromptMode,
+        webSearchEnabled,
+        inputImageChars: typeof imageB64 === "string" ? imageB64.length : 0,
+        maskPresent: Boolean(maskCheck.mask),
+        maskBytes: maskCheck.maskBytes ?? 0,
+      });
+      const startTime = Date.now();
+      const { b64: resultB64, usage, revisedPrompt, webSearchCalls = 0 } = await editViaResponses(
+        activeProvider,
+        prompt,
+        imageB64,
+        quality,
+        effectiveSize,
+        moderation,
+        normalizedPromptMode,
+        ctx,
+        requestId,
+        {
+          model: imageModel,
+          reasoningEffort,
+          webSearchEnabled,
+          mask: maskCheck.mask,
+          signal: cancelController.signal,
+        },
+      );
+      throwIfJobCanceled(requestId);
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      await mkdir(ctx.config.storage.generatedDir, { recursive: true });
+      throwIfJobCanceled(requestId);
+      const filename = `${Date.now()}_${randomBytes(ctx.config.ids.generatedHexBytes).toString("hex")}.png`;
+      await writeFile(join(ctx.config.storage.generatedDir, filename), Buffer.from(resultB64, "base64"));
+      const meta = {
+        prompt,
+        userPrompt: prompt,
+        revisedPrompt: revisedPrompt || null,
+        promptMode: normalizedPromptMode,
+        quality,
+        size: effectiveSize,
+        moderation,
+        model: imageModel,
+        format: "png",
+        provider: activeProvider,
+        kind: "edit",
+        requestId,
+        createdAt: Date.now(),
+        usage: usage || null,
+        webSearchCalls,
+        webSearchEnabled,
+      };
+      await writeFile(join(ctx.config.storage.generatedDir, filename + ".json"), JSON.stringify(meta)).catch(() => {});
+      invalidateHistoryIndex();
+      finishHttpStatus = 200;
+      finishMeta = { filename, imageChars: resultB64.length };
+      logEvent("edit", "saved", {
+        requestId,
+        filename,
+        imageChars: resultB64.length,
+        elapsedMs: Date.now() - startTime,
+      });
+
+      res.json({
+        image: `data:image/png;base64,${resultB64}`,
+        elapsed,
+        filename,
+        usage,
+        provider: activeProvider,
+        model: imageModel,
+        moderation,
+        warnings: qualityWarnings,
+        revisedPrompt: revisedPrompt || null,
+        promptMode: normalizedPromptMode,
+        webSearchCalls,
+        webSearchEnabled,
+      });
+    } catch (e) {
+      const err = errInfo(e);
+      const fallbackCode = err.code || classifyUpstreamError(err.message);
+      if (isGenerationCanceledError(err.raw) || isJobCanceled(requestId)) {
+        const canceled = makeGenerationCanceledError();
+        finishCanceled = true;
+        finishHttpStatus = canceled.status;
+        finishErrorCode = canceled.code;
+        return res.status(canceled.status).json({
+          error: canceled.message,
+          code: canceled.code,
+          requestId,
+        });
+      }
+      finishStatus = "error";
+      finishHttpStatus = err.status || 500;
+      finishErrorCode = fallbackCode || "EDIT_FAILED";
+      logError("edit", "error", err.raw, { requestId, code: finishErrorCode });
+      res.status(err.status || 500).json({ error: err.message, code: fallbackCode });
+    } finally {
+      finishJob(requestId, {
+        canceled: finishCanceled,
+        status: finishStatus,
+        httpStatus: finishHttpStatus,
+        errorCode: finishErrorCode,
+        meta: finishMeta,
+      });
+    }
+  });
+}
